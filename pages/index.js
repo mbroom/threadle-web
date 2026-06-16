@@ -45,8 +45,7 @@ export default function Home() {
   useEffect(() => {
     // Load puzzle and word list in parallel
     Promise.all([
-      fetch("/api/puzzle").then(r => r.json()),
-      fetch("/common_words.txt").then(r => r.text())
+fetch("/api/puzzle?v=" + Date.now()).then(r => r.json()),      fetch("/common_words.txt").then(r => r.text())
     ]).then(([puzzleData, wordText]) => {
       setPuzzle(puzzleData);
       const words = new Set(
