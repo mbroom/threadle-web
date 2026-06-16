@@ -20,7 +20,6 @@ export default async function handler(req, res) {
   try {
     const puzzle = await redis.get("threadle:puzzle");
     if (!puzzle) throw new Error("No puzzle in store");
-    res.setHeader("Cache-Control", "public, max-age=3600");
     res.status(200).json(typeof puzzle === "string" ? JSON.parse(puzzle) : puzzle);
   } catch (e) {
     console.error("puzzle fetch failed:", e.message);
