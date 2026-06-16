@@ -152,8 +152,8 @@ export default async function handler(req, res) {
 
   try {
     const cwd = process.cwd();
-    const wordSet = loadWordSet(path.join(cwd, "wordlist.txt"));
-    const commonWords = loadWordSet(path.join(cwd, "common_words.txt"));
+    const wordSet = loadWordSet(path.join(cwd, "public", "wordlist.txt"));
+    const commonWords = loadWordSet(path.join(cwd, "public", "common_words.txt"));
 
     const gen = await generatePuzzle(difficulty, wordSet, commonWords);
 
