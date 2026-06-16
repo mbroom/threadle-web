@@ -1,8 +1,14 @@
-import fs from "fs";
 import path from "path";
+import fs from "fs";
 import Anthropic from "@anthropic-ai/sdk";
+import { Redis } from "@upstash/redis";
 
 const client = new Anthropic();
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
 const HAIKU = "claude-haiku-4-5";
 const HAIKU_IN = 0.8 / 1e6, HAIKU_OUT = 4.0 / 1e6;
 
@@ -15,9 +21,9 @@ const HARD_START_WORDS = [
 const RANGES = { easy: [3,4], medium: [5,7], hard: [8,12] };
 
 const FALLBACKS = {
-  easy:   { start:"CAT",   end:"DOG",    path:["CAT","COT","DOT","DOG"],                          steps:3 },
-  medium: { start:"COLD",  end:"WARM",   path:["COLD","CORD","WORD","WARD","WARM"],                steps:4 },
-  hard:   { start:"PLANT", end:"PRISON", path:["PLANT","PLAN","PIAN","PION","PRION","PRISON"],     steps:5 },
+  easy:   { start:"CAT",   end:"DOG",    path:["CAT","COT","DOT","DOG"],                      steps:3 },
+  medium: { start:"COLD",  end:"WARM",   path:["COLD","CORD","WORD","WARD","WARM"],            steps:4 },
+  hard:   { start:"PLANT", end:"PRISON", path:["PLANT","PLAN","PIAN","PION","PRION","PRISON"], steps:5 },
 };
 
 function getDifficulty() {
@@ -90,8 +96,7 @@ async function callHaiku(system, user) {
     messages: [{ role: "user", content: user }]
   });
   const text = res.content.map(b => b.text || "").join("");
-  const cost = HAIKU_IN * res.usage.input_tokens + HAIKU_OUT * res.usage.output_tokens;
-  return { text, cost };
+  return { text, cost: HAIKU_IN * res.usage.input_tokens + HAIKU_OUT * res.usage.output_tokens };
 }
 
 async function generatePuzzle(difficulty, wordSet, commonWords) {
@@ -136,11 +141,7 @@ async function generatePuzzle(difficulty, wordSet, commonWords) {
   return { start: startWord, end: endWord, path, steps: path.length-1, totalCost };
 }
 
-// ── Next.js API route handler ─────────────────────────────────────────────
-// Called by Vercel cron at 7am UTC daily (midnight PT)
-// Also callable manually: GET /api/generate?secret=YOUR_SECRET
 export default async function handler(req, res) {
-  // Basic auth — prevent public from triggering regeneration
   const secret = process.env.CRON_SECRET || "threadle-cron";
   const provided = req.headers["authorization"] || req.query.secret;
   if (provided !== secret && provided !== `Bearer ${secret}`) {
@@ -156,35 +157,24 @@ export default async function handler(req, res) {
     const commonWords = loadWordSet(path.join(cwd, "public", "common_words.txt"));
 
     const gen = await generatePuzzle(difficulty, wordSet, commonWords);
-
     const puzzle = {
-      start: gen.start,
-      end: gen.end,
-      path: gen.path,
-      steps: gen.steps,
-      par: gen.steps,
-      classification: difficulty,
-      date: today,
+      start: gen.start, end: gen.end, path: gen.path,
+      steps: gen.steps, par: gen.steps,
+      classification: difficulty, date: today,
       generatedAt: new Date().toISOString(),
-      cost: gen.totalCost,
-      fallback: false
+      cost: gen.totalCost, fallback: false
     };
 
-    // Write puzzle.json — this is what /api/puzzle serves to players
-    fs.writeFileSync(path.join(cwd, "puzzle.json"), JSON.stringify(puzzle, null, 2));
-
-    console.log("Generated: " + puzzle.start + " -> " + puzzle.end + " (" + puzzle.steps + " steps)");
+    // Store in Upstash Redis — persists across Vercel deployments
+    await redis.set("threadle:puzzle", JSON.stringify(puzzle));
+    console.log("Stored puzzle: " + puzzle.start + " -> " + puzzle.end);
     return res.status(200).json({ ok: true, puzzle });
 
   } catch (e) {
-    // On failure write fallback — players never see an error
-    console.error("Generation failed: " + e.message);
+    console.error("Generation failed:", e.message);
     const fb = FALLBACKS[difficulty];
     const fallback = { ...fb, par: fb.steps, classification: difficulty, date: today, fallback: true };
-    fs.writeFileSync(
-      path.join(process.cwd(), "puzzle.json"),
-      JSON.stringify(fallback, null, 2)
-    );
+    await redis.set("threadle:puzzle", JSON.stringify(fallback));
     return res.status(200).json({ ok: true, fallback: true, puzzle: fallback });
   }
 }
