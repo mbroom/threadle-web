@@ -1,0 +1,17 @@
+{
+  "start": "CART",
+  "end": "JAIL",
+  "path": [
+    "CART",
+    "CARL",
+    "JARL",
+    "JAIL"
+  ],
+  "steps": 3,
+  "par": 3,
+  "classification": "easy",
+  "date": "2026-06-16",
+  "generatedAt": "2026-06-16T02:04:55.972Z",
+  "cost": 0.000712,
+  "fallback": false
+}
